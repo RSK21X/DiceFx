@@ -2,6 +2,8 @@
 
 [中文说明](./README.zh-CN.md)
 
+<img width="840" height="550" alt="ScreenShot_2026-03-06_163311_059" src="https://github.com/user-attachments/assets/3f71af90-1699-4690-8894-1b226cea1793" />
+
 DiceFX is a macOS-first JUCE VST3 plugin built around one idea: press the dice, randomize unlocked parameters, and turn a clean input into a playable accident.
 
 The current build focuses on a compact two-state UI, factory and user presets, parameter locks, tempo-synced LFO modulation, and a modular multi-FX chain for sound design experiments.
