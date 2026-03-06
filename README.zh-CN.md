@@ -2,6 +2,8 @@
 
 [English README](./README.md)
 
+<img width="840" height="550" alt="ScreenShot_2026-03-06_163311_059" src="https://github.com/user-attachments/assets/3f71af90-1699-4690-8894-1b226cea1793" />
+
 DiceFX 是一个以 macOS 为优先目标、基于 JUCE 开发的 `VST3` 音频插件。它的核心思路很直接：按下骰子按钮，随机分配未锁定参数，把原本普通的输入信号变成更有意外感和可玩性的效果链结果。
 
 当前版本重点放在紧凑双态 UI、工厂与用户预设、参数锁、可跟随宿主速度的 LFO，以及适合声音实验的多效果器串联处理。
