@@ -1,111 +1,134 @@
 # DiceFX
 
-[中文说明](./README.zh-CN.md)
+**Roll a new sound. Keep the parts you like.**
 
-<img width="840" height="550" alt="ScreenShot_2026-03-06_163311_059" src="https://github.com/user-attachments/assets/3f71af90-1699-4690-8894-1b226cea1793" />
+[中文说明](README.zh-CN.md) · [Download](https://github.com/RSK21X/DiceFx/releases/latest) · [What's new](CHANGELOG.md)
 
-DiceFX is a macOS-first JUCE VST3 plugin built around one idea: press the dice, randomize unlocked parameters, and turn a clean input into a playable accident.
+DiceFX is a stereo multi-effects VST3 plug-in for sound experiments. Combine distortion, modulation, delay and reverb, then randomize unlocked parameters to explore variations without losing the settings you want to keep.
 
-The current build focuses on a compact two-state UI, factory and user presets, parameter locks, tempo-synced LFO modulation, and a modular multi-FX chain for sound design experiments.
+![DiceFX 1.1.0 — compact black-and-yellow interface](docs/images/dicefx-main.png)
 
-## Current Feature Set
+## What's new in 1.1.0
 
-- `VST3` plugin target on macOS
-- `JUCE + CMake` project layout
-- Multi-FX chain: `Distortion -> Modulation -> Delay -> Reverb`
-- Effect types:
-  - Distortion: `Modern`, `Vintage`, `Hard`
-  - Delay: `Digital`, `Tape`, `PingPong`
-  - Reverb: `Room`, `Hall`, `Plate`
-  - Modulation: `Chorus`, `Flanger`
-- Global controls: `Input`, `Output`, `Mix`, `Random Amount`
-- One global `LFO` with free rate / tempo sync
-- Current LFO destinations:
-  - `Dist Drive`
-  - `Delay Time`
-  - `Delay Feedback`
-  - `Reverb Size`
-  - `Reverb Mix`
-  - `Mod Depth`
-- Parameter locks that protect values from dice randomization
-- Factory presets from `Resources/Presets.json`
-- User preset save/import/export in JSON format
-- Compact view plus `advanced` view for per-module controls
+A smaller, cleaner interface: flat black-and-yellow styling, scalable SVG icons and a tidy 2×2 effects panel. The default window is **800 × 500**, resizable from **720 × 450** to **1120 × 700**. Knobs stay round and controls retain their spacing when resized.
 
-## Build
+This update changes the interface and documentation, **not the audio-processing code**.
 
-Requirements:
+## Download and install
 
-- macOS
-- CMake `>= 3.22`
-- Xcode Command Line Tools or a recent Clang toolchain
-- JUCE checked out at `external/JUCE`
+Get the latest build from [GitHub Releases](https://github.com/RSK21X/DiceFx/releases/latest).
 
-Clone with submodules:
+| Download | Purpose |
+| --- | --- |
+| `DiceFX-1.1.0-macOS-universal-VST3.zip` | VST3 plug-in for your DAW |
+| `DiceFX-1.1.0-macOS-universal-Standalone.zip` | Standalone app for trying the interface and effects |
+| `SHA256SUMS.txt` | Checksums for the release archives |
 
-```bash
-git clone --recurse-submodules <your-repo-url>
-cd <repo-folder>
-```
+The release contains Apple Silicon (`arm64`) and Intel (`x86_64`) builds targeting macOS 11 or newer. A VST3-capable host is required for the plug-in. AU, AAX and Windows binaries are not included.
 
-If JUCE is missing:
+Release checks passed natively on Apple Silicon and for the Intel slice under Rosetta on macOS 27. Older macOS versions and a physical Intel Mac have not been runtime-tested.
 
-```bash
-git submodule update --init --recursive
-```
+1. Quit your DAW and extract the VST3 archive.
+2. Put `DiceFX.vst3` in `~/Library/Audio/Plug-Ins/VST3/`.
+3. Reopen your DAW, rescan its plug-ins if needed, and load DiceFX on a stereo track.
 
-Build:
+The standalone app does not need a DAW. Its audio input starts muted to avoid a feedback loop; check its audio settings before enabling input. Without a host tempo, synchronized controls use the processor's 120 BPM fallback.
 
-```bash
-cmake -S . -B build
-cmake --build build --config Release
-```
+Release bundles are ad-hoc signed, **not Apple-notarized**. macOS may ask you to approve opening a downloaded build. Use the per-app approval flow only if you trust the download; you do not need to disable system-wide security protections.
 
-With `COPY_PLUGIN_AFTER_BUILD` enabled in [CMakeLists.txt](./CMakeLists.txt), the Release build is copied to the macOS VST3 location:
+## A quick way to use it
 
-```text
-~/Library/Audio/Plug-Ins/VST3/DiceFX.vst3
-```
+1. Start with **Init Clean** or another preset and enable the effects you need using their status lights.
+2. Adjust **Amount** for a subtle or stronger randomization.
+3. Click a module's **lock** to protect all of its parameters, or open **Locks** to protect individual settings.
+4. Press **RANDOMIZE**. Use the back/forward arrows to undo or redo randomization, or **A / B** to compare two sounds.
+5. Set the overall **MIX**, then save the result as a preset.
 
-## Project Layout
+Drag a knob to adjust it; double-click to reset it to its default. A module light switches the effect on or off. Locks protect settings from randomization; they do not prevent manual edits.
 
-```text
-.
-├── CMakeLists.txt
-├── Resources/
-│   └── Presets.json
-├── Source/
-│   ├── Dsp/
-│   ├── Mod/
-│   ├── Presets/
-│   ├── Random/
-│   ├── PluginEditor.cpp
-│   ├── PluginEditor.h
-│   ├── PluginProcessor.cpp
-│   └── PluginProcessor.h
-└── external/
-    └── JUCE/
-```
+## Effects and modulation
 
-## Presets
+The audio chain is **Distortion → Modulation → Delay → Reverb**, with global input gain, dry/wet mix and output gain.
 
-- Factory presets are embedded from [Resources/Presets.json](./Resources/Presets.json).
-- User presets are stored under:
+| Section | Types | Controls |
+| --- | --- | --- |
+| Distortion | Modern · Vintage · Hard | Drive · Tone · Mix |
+| Delay | Digital · Tape · PingPong | Time · Sync · Feedback · Tone · Mix |
+| Reverb | Room · Hall · Plate | Size · Damp · Mix |
+| Modulation | Chorus · Flanger | Depth · Rate · Feedback · Mix |
+
+The global sine LFO has free-rate and tempo-synchronized modes, depth, and **one destination at a time**: None, Dist Drive, Delay Time, Delay Feedback, Reverb Size, Reverb Mix or Mod Depth. The current processor does not support multiple simultaneous LFO destinations or selectable waveforms.
+
+### Parameter locks
+
+![Individual parameter locks in DiceFX](docs/images/dicefx-locks.png)
+
+Use the module padlock for an entire section. The **Locks** drawer provides individual effect and global input/output/mix locks. A partially locked module has a separate indicator.
+
+### Presets
+
+Four factory presets are embedded: **Init Clean**, **Echo Mist**, **Grain Smash** and **Wide Wash**.
+
+Use **Save** to keep a user preset. The **…** menu includes save, import and export; preset files are JSON. On macOS, this version stores user presets in:
 
 ```text
-~/Library/Application Support/DiceFX/Presets
+~/Library/DiceFX/Presets/
 ```
 
-- Import/export uses plain JSON so preset files are easy to inspect and version.
+Existing parameter IDs and the audio-processing implementation are retained in this UI update.
 
-## Notes
+## Build from source
 
-- This repository is currently `macOS-first`.
-- `AU`, Windows packaging polish, extra modulation routing, and more effect models are still future work.
-- The UI and DSP are under active iteration and should be treated as a development build rather than a final release.
+Requirements: CMake 3.22+, a C++17 compiler, and Xcode Command Line Tools on macOS. JUCE 8.0.12 is pinned as a Git submodule.
+
+```bash
+git clone --recurse-submodules https://github.com/RSK21X/DiceFx.git
+cd DiceFx
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target DiceFX_VST3 -j 4
+```
+
+If you already cloned without JUCE, run `git submodule update --init --recursive`.
+
+By default the build copies the VST3 bundle to your user plug-in folder. Set `-DDICEFX_COPY_PLUGIN_AFTER_BUILD=OFF` to build without installing it.
+
+### Universal macOS release
+
+```bash
+cmake -S . -B build-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+  -DDICEFX_BUILD_PREVIEW=ON \
+  -DDICEFX_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build-release --config Release \
+  --target DiceFX_VST3 DiceFX_Standalone -j 4
+```
+
+The bundles are under `build-release/DiceFX_artefacts/Release/VST3/` and `build-release/DiceFX_artefacts/Release/Standalone/`.
+
+### UI and interaction checks
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DDICEFX_BUILD_UI_CHECKS=ON \
+  -DDICEFX_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build --config Release --target DiceFXUIChecks -j 4
+./build/DiceFXUIChecks_artefacts/Release/DiceFXUIChecks ./build/ui-screenshots
+```
+
+The checks render the real editor at four sizes and test SVG rendering, circular knobs, non-overlapping controls, parameter bindings, factory presets, locks, randomization, undo/redo, A/B and sync displays. They also check for finite audio output across all factory presets at 44.1/48/96 kHz and 64/512-sample blocks.
+
+## Project map
+
+- `Source/UI/` — theme, controls, layout and randomization history.
+- `Source/Dsp/`, `Source/Mod/`, `Source/Random/` — audio effects, LFO and randomizer.
+- `Source/Presets/` and `Resources/Presets.json` — preset handling and factory presets.
+- `Resources/Icons/` — embedded SVG icons.
+- `Tests/UIChecks.cpp` — editor checks and screenshots.
+- `external/JUCE/` — pinned framework submodule.
 
 ## License
 
-DiceFX is released under `GPL-3.0`. See [LICENSE](./LICENSE).
-
-Because JUCE is used under the GPL workflow here, distributing derivative closed-source builds would require a different JUCE licensing path.
+Project code is distributed under [GPL-3.0](LICENSE). JUCE has its own licensing terms; see the licence included in the JUCE submodule.

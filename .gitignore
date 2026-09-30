@@ -1,0 +1,19 @@
+.DS_Store
+.idea/
+.vscode/
+.venv/
+.skillenv/
+
+build/
+build-*/
+docs/screenshots-generated/
+User Presets/
+cmake-build-*/
+
+index.html
+skills/
+private-domain-conversion-sop-skill.zip
+
+*.swp
+*.swo
+*.tmp
