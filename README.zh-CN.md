@@ -12,7 +12,13 @@ DiceFX 是一个用于声音实验的立体声 VST3 多效果器插件。将失�
 
 界面更小、更清楚：黑黄扁平配色、可缩放 SVG 图标、整洁的 2×2 效果器面板。默认窗口为 **800 × 500**，支持在 **720 × 450** 到 **1120 × 700** 之间缩放，旋钮保持正圆，控件间距不随缩放错乱。
 
-本次更新修改界面与文档，**不修改音频处理代码**。
+1.1.0 发布版本修改界面与文档，**未修改音频处理代码**。当前源码的 DSP 修复见下文。
+
+### 当前源码：DSP 修复（尚未包含在发布下载包中）
+
+main 分支另外修复了低采样率音色滤波不稳定、滤波历史被清空、左右声道控制变化不一致、混响时间错误、调制随音频块大小变化、重置残留，以及主增益/混合和延迟时间突变的问题。音频处理复用预分配内存，支持不规则及超过预期长度的音频块。界面和参数 ID 保持不变。
+
+节拍同步支持 10–1000 BPM，各采样率均预分配最长 24 秒延迟。超出范围的正数速度会限制到该范围；缺失或无效速度回退至 120 BPM。尾音声明采用保守上限：同步延迟按最慢受支持速度估算，可能持续自激的 Tape 反馈声明无限尾音，避免宿主过早截断。**现有 1.1.0 下载包不包含这些源码修复。**
 
 ## 下载与安装
 
@@ -75,7 +81,7 @@ DiceFX 是一个用于声音实验的立体声 VST3 多效果器插件。将失�
 ~/Library/DiceFX/Presets/
 ```
 
-本次界面更新保留既有参数 ID 和音频处理实现。
+1.1.0 界面更新保留了既有参数 ID 和音频处理实现；当前源码的 DSP 修复仍保持原参数 ID。
 
 ## 从源码构建
 
@@ -120,6 +126,17 @@ cmake --build build --config Release --target DiceFXUIChecks -j 4
 
 检查程序会在四种尺寸下渲染真实插件界面，并测试 SVG 图标、旋钮圆形、控件无重叠、参数绑定、工厂预设、参数锁、随机化、撤销与重做、A/B 和同步数值显示。还会在 44.1/48/96 kHz、64/512 采样块下检查所有工厂预设的音频输出是否为有限值。
 
+### 离线 DSP 回归检查
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DDICEFX_BUILD_DSP_CHECKS=ON -DDICEFX_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build --config Release --target DiceFXDSPChecks -j 4
+ctest --test-dir build -C Release --output-on-failure
+```
+
+检查覆盖 22.05–192 kHz 稳定性、滤波连续性、立体声控制变化、混响和同步延迟时间、六种 LFO 目标在不同音频块长度下的一致性、控制平滑、重置及尾音声明。macOS 还会检测处理期间的 `malloc`、`calloc`、`realloc` 和 C++ 内存分配；其他平台仅检测 C++ 内存分配。
+
 ## 项目结构
 
 - `Source/UI/`：主题、控件、界面布局和随机化历史。
@@ -127,6 +144,7 @@ cmake --build build --config Release --target DiceFXUIChecks -j 4
 - `Source/Presets/` 与 `Resources/Presets.json`：预设管理和工厂预设。
 - `Resources/Icons/`：内嵌 SVG 图标。
 - `Tests/UIChecks.cpp`：界面检查与截图。
+- `Tests/DSPChecks.cpp`：离线音频回归检查。
 - `external/JUCE/`：固定版本的框架子模块。
 
 ## 许可证

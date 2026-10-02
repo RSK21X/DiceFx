@@ -32,6 +32,10 @@ public:
         delayLineL.reset();
         delayLineR.reset();
         phase = 0.0;
+        mixSmoothed.setCurrentAndTargetValue (mixSmoothed.getTargetValue());
+        depthSmoothed.setCurrentAndTargetValue (depthSmoothed.getTargetValue());
+        feedbackSmoothed.setCurrentAndTargetValue (feedbackSmoothed.getTargetValue());
+        rateSmoothed.setCurrentAndTargetValue (rateSmoothed.getTargetValue());
     }
 
     void setParameters (float newRate,

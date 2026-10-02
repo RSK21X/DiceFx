@@ -6,6 +6,8 @@
 class Delay
 {
 public:
+    // One whole-note repeat at the supported minimum tempo (10 BPM).
+    static constexpr double maximumDelaySeconds = 24.0;
     enum Type
     {
         Digital = 0,
@@ -18,6 +20,12 @@ public:
         sampleRate = newSampleRate;
         feedbackSmoothed.reset (sampleRate, 0.05);
         mixSmoothed.reset (sampleRate, 0.05);
+        delaySmoothed.reset (sampleRate, 0.05);
+        delayInitialised = false;
+        maxDelaySamples = static_cast<int> (std::ceil (sampleRate * maximumDelaySeconds));
+        delayLineL.setMaximumDelayInSamples (maxDelaySamples);
+        delayLineR.setMaximumDelayInSamples (maxDelaySamples);
+        lastCutoff = -1.0f;
         updateFilter();
         juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (samplesPerBlock), 1 };
         delayLineL.prepare (spec);
@@ -29,6 +37,9 @@ public:
     {
         delayLineL.reset();
         delayLineR.reset();
+        feedbackSmoothed.setCurrentAndTargetValue (feedbackSmoothed.getTargetValue());
+        mixSmoothed.setCurrentAndTargetValue (mixSmoothed.getTargetValue());
+        delaySmoothed.setCurrentAndTargetValue (delaySmoothed.getTargetValue());
         for (auto& filter : filters)
             filter.reset();
     }
@@ -49,8 +60,13 @@ public:
         updateFilter();
 
         const float delaySamples = juce::jlimit (1.0f, static_cast<float> (maxDelaySamples), delayMs * static_cast<float> (sampleRate) / 1000.0f);
-        delayLineL.setDelay (delaySamples);
-        delayLineR.setDelay (delaySamples);
+        if (! delayInitialised)
+        {
+            delaySmoothed.setCurrentAndTargetValue (delaySamples);
+            delayInitialised = true;
+        }
+        else
+            delaySmoothed.setTargetValue (delaySamples);
     }
 
     void process (juce::AudioBuffer<float>& buffer)
@@ -72,6 +88,9 @@ public:
             {
                 const float feedbackValue = feedbackSmoothed.getNextValue();
                 const float mixValue = mixSmoothed.getNextValue();
+                const float delaySamples = delaySmoothed.getNextValue();
+                delayLineL.setDelay (delaySamples);
+                delayLineR.setDelay (delaySamples);
 
                 float delayedL = delayLineL.popSample (0);
                 float delayedR = delayLineR.popSample (0);
@@ -91,16 +110,19 @@ public:
             return;
         }
 
-        for (int channel = 0; channel < numChannels; ++channel)
+        for (int i = 0; i < numSamples; ++i)
         {
-            auto* data = buffer.getWritePointer (channel);
-            auto& line = (channel % 2 == 0) ? delayLineL : delayLineR;
-            auto& filter = filters[channel % 2];
+            const float feedbackValue = feedbackSmoothed.getNextValue();
+            const float mixValue = mixSmoothed.getNextValue();
+            const float delaySamples = delaySmoothed.getNextValue();
+            delayLineL.setDelay (delaySamples);
+            delayLineR.setDelay (delaySamples);
 
-            for (int i = 0; i < numSamples; ++i)
+            for (int channel = 0; channel < numChannels; ++channel)
             {
-                const float feedbackValue = feedbackSmoothed.getNextValue();
-                const float mixValue = mixSmoothed.getNextValue();
+                auto* data = buffer.getWritePointer (channel);
+                auto& line = (channel % 2 == 0) ? delayLineL : delayLineR;
+                auto& filter = filters[channel % 2];
 
                 const float dry = data[i];
                 float delayed = line.popSample (0);
@@ -136,28 +158,32 @@ private:
             minCutoff = 500.0f;
             maxCutoff = 9000.0f;
         }
-        const float cutoff = juce::jmap (filterTone, 0.0f, 1.0f, minCutoff, maxCutoff);
-        auto coeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass (sampleRate, cutoff);
+        const float cutoff = juce::jmin (static_cast<float> (sampleRate * 0.45),
+                                       juce::jmap (filterTone, 0.0f, 1.0f, minCutoff, maxCutoff));
+        if (cutoff == lastCutoff)
+            return;
+        lastCutoff = cutoff;
+        const auto coeffs = juce::dsp::IIR::ArrayCoefficients<float>::makeLowPass (sampleRate, cutoff);
         for (auto& filter : filters)
-        {
-            filter.coefficients = coeffs;
-            filter.reset();
-        }
+            *filter.coefficients = coeffs;
     }
 
-    static constexpr int maxDelaySamples = 384000;
+    int maxDelaySamples = 1;
 
     double sampleRate = 44100.0;
     bool enabled = true;
     float delayMs = 380.0f;
     float filterTone = 0.6f;
+    float lastCutoff = -1.0f;
+    bool delayInitialised = false;
     Type type = Digital;
 
     juce::SmoothedValue<float> feedbackSmoothed;
     juce::SmoothedValue<float> mixSmoothed;
+    juce::SmoothedValue<float> delaySmoothed;
 
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineL { maxDelaySamples };
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineR { maxDelaySamples };
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineL;
+    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delayLineR;
 
     juce::dsp::IIR::Filter<float> filters[2];
 };

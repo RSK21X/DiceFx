@@ -18,6 +18,7 @@ public:
         sampleRate = newSampleRate;
         driveSmoothed.reset (sampleRate, 0.02);
         mixSmoothed.reset (sampleRate, 0.02);
+        lastCutoff = -1.0f;
         updateTone();
         reset();
     }
@@ -48,16 +49,16 @@ public:
         const int numChannels = buffer.getNumChannels();
         const int numSamples = buffer.getNumSamples();
 
-        for (int channel = 0; channel < numChannels; ++channel)
+        for (int i = 0; i < numSamples; ++i)
         {
-            auto* data = buffer.getWritePointer (channel);
-            auto& filter = toneFilters[channel % 2];
+            const float driveValue = driveSmoothed.getNextValue();
+            const float mixValue = mixSmoothed.getNextValue();
+            const float gain = 1.0f + driveValue * 20.0f;
 
-            for (int i = 0; i < numSamples; ++i)
+            for (int channel = 0; channel < numChannels; ++channel)
             {
-                const float driveValue = driveSmoothed.getNextValue();
-                const float mixValue = mixSmoothed.getNextValue();
-                const float gain = 1.0f + driveValue * 20.0f;
+                auto* data = buffer.getWritePointer (channel);
+                auto& filter = toneFilters[channel % 2];
 
                 const float dry = data[i];
                 float wet = 0.0f;
@@ -99,19 +100,21 @@ private:
             maxCutoff = 12000.0f;
         else if (type == Hard)
             maxCutoff = 16000.0f;
-        const float cutoff = juce::jmap (tone, 0.0f, 1.0f, minCutoff, maxCutoff);
-        auto coeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass (sampleRate, cutoff);
-
+        const float cutoff = juce::jmin (static_cast<float> (sampleRate * 0.45),
+                                       juce::jmap (tone, 0.0f, 1.0f, minCutoff, maxCutoff));
+        if (cutoff == lastCutoff)
+            return;
+        lastCutoff = cutoff;
+        const auto coeffs = juce::dsp::IIR::ArrayCoefficients<float>::makeLowPass (sampleRate, cutoff);
+        // Reuse the preallocated second-order coefficient storage and preserve history.
         for (auto& filter : toneFilters)
-        {
-            filter.coefficients = coeffs;
-            filter.reset();
-        }
+            *filter.coefficients = coeffs;
     }
 
     double sampleRate = 44100.0;
     bool enabled = true;
     float tone = 0.7f;
+    float lastCutoff = -1.0f;
     Type type = Modern;
 
     juce::SmoothedValue<float> driveSmoothed;

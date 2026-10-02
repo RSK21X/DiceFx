@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <array>
 
 class LFO
 {
@@ -21,19 +22,23 @@ public:
 
     void setSync (bool shouldSync) { sync = shouldSync; }
     void setRateValue (float newValue) { rateValue = juce::jlimit (0.0f, 1.0f, newValue); }
-    void setTempo (double newBpm) { bpm = newBpm > 0.0 ? newBpm : 120.0; }
-
-    float getNextValue (int numSamples)
+    static double supportedTempo (double newBpm)
     {
-        const double rateHz = getRateHz();
-        const double phaseDelta = rateHz / sampleRate;
+        return std::isfinite (newBpm) && newBpm > 0.0 ? juce::jlimit (10.0, 1000.0, newBpm) : 120.0;
+    }
+    void setTempo (double newBpm) { bpm = supportedTempo (newBpm); }
 
+    float getNextValue()
+    {
         const float value = std::sin (juce::MathConstants<double>::twoPi * phase);
-
-        phase += phaseDelta * numSamples;
-        phase -= std::floor (phase);
-
+        skip (1);
         return value;
+    }
+
+    void skip (int numSamples)
+    {
+        phase += getRateHz() * numSamples / sampleRate;
+        phase -= std::floor (phase);
     }
 
     double getRateHz() const
@@ -51,9 +56,9 @@ public:
         return juce::jmap (static_cast<double> (rateValue), minHz, maxHz);
     }
 
-    static const std::vector<Division>& getDivisions()
+    static const std::array<Division, 10>& getDivisions()
     {
-        static const std::vector<Division> divisions = {
+        static constexpr std::array<Division, 10> divisions {{
             { "1/1", 4.0 },
             { "1/2", 2.0 },
             { "1/4", 1.0 },
@@ -64,7 +69,7 @@ public:
             { "1/16T", 1.0 / 6.0 },
             { "1/8D", 0.75 },
             { "1/16D", 0.375 }
-        };
+        }};
 
         return divisions;
     }
@@ -81,7 +86,7 @@ public:
     {
         const auto& divisions = getDivisions();
         const int safeIndex = juce::jlimit (0, static_cast<int> (divisions.size() - 1), index);
-        const double beatSeconds = 60.0 / (bpm > 0.0 ? bpm : 120.0);
+        const double beatSeconds = 60.0 / supportedTempo (bpm);
         return beatSeconds * divisions[safeIndex].beats * 1000.0;
     }
 
@@ -92,4 +97,3 @@ private:
     float rateValue = 0.5f;
     bool sync = true;
 };
-

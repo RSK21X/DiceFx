@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <limits>
 
 namespace
 {
@@ -83,7 +84,35 @@ const juce::String DiceFXAudioProcessor::getName() const
 bool DiceFXAudioProcessor::acceptsMidi() const { return false; }
 bool DiceFXAudioProcessor::producesMidi() const { return false; }
 bool DiceFXAudioProcessor::isMidiEffect() const { return false; }
-double DiceFXAudioProcessor::getTailLengthSeconds() const { return 2.0; }
+double DiceFXAudioProcessor::getTailLengthSeconds() const
+{
+    const auto value = [this] (const char* id) { return apvts.getRawParameterValue (id)->load(); };
+    double tail = 0.05; // Allow the master-control ramps to settle.
+    if (value ("mod_enable") > 0.5f)
+        tail += 2.0;
+    if (value ("delay_enable") > 0.5f)
+    {
+        double feedback = value ("delay_feedback");
+        if (static_cast<int> (value ("lfo_dest")) == 3)
+            feedback = juce::jmin (0.95, feedback + value ("lfo_depth") * 0.95);
+        // Tape saturates twice in its feedback loop. Its small-signal gain can
+        // exceed unity, so an infinite tail is honest for regenerative settings.
+        if (static_cast<int> (value ("delay_type")) == Delay::Tape)
+            feedback *= 1.4 * 1.4;
+        if (feedback >= 1.0)
+            return std::numeric_limits<double>::infinity();
+        double delaySeconds = value ("delay_sync") > 0.5f ? Delay::maximumDelaySeconds
+                                                          : value ("delay_time") / 1000.0;
+        if (static_cast<int> (value ("lfo_dest")) == 2 && value ("lfo_depth") > 0.0f)
+            delaySeconds = juce::jmax (delaySeconds, 2.0);
+        const double repeats = feedback > 0.0 ? std::ceil (std::log (1.0e-6) / std::log (feedback)) : 0.0;
+        tail += delaySeconds * (1.0 + repeats);
+    }
+    // Conservative FreeVerb decay bound, including Hall at maximum room size.
+    if (value ("rev_enable") > 0.5f)
+        tail += 60.0;
+    return tail;
+}
 
 int DiceFXAudioProcessor::getNumPrograms() { return 1; }
 int DiceFXAudioProcessor::getCurrentProgram() { return 0; }
@@ -93,6 +122,7 @@ void DiceFXAudioProcessor::changeProgramName (int, const juce::String&) {}
 
 void DiceFXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    samplesPerBlock = juce::jmax (1, samplesPerBlock);
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (samplesPerBlock), 2 };
 
     distortion.prepare (sampleRate);
@@ -102,9 +132,30 @@ void DiceFXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     lfo.prepare (sampleRate);
 
     dryBuffer.setSize (getTotalNumOutputChannels(), samplesPerBlock);
+    inputGainSmoothed.reset (sampleRate, 0.02);
+    outputGainSmoothed.reset (sampleRate, 0.02);
+    globalMixSmoothed.reset (sampleRate, 0.02);
+    inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (apvts.getRawParameterValue ("input_gain")->load()));
+    outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (apvts.getRawParameterValue ("output_gain")->load()));
+    globalMixSmoothed.setCurrentAndTargetValue (apvts.getRawParameterValue ("mix")->load());
+    controlSamplesRemaining = 0;
 }
 
 void DiceFXAudioProcessor::releaseResources() {}
+
+void DiceFXAudioProcessor::reset()
+{
+    distortion.reset();
+    modulation.reset();
+    delay.reset();
+    reverb.reset();
+    lfo.reset();
+    dryBuffer.clear();
+    inputGainSmoothed.setCurrentAndTargetValue (inputGainSmoothed.getTargetValue());
+    outputGainSmoothed.setCurrentAndTargetValue (outputGainSmoothed.getTargetValue());
+    globalMixSmoothed.setCurrentAndTargetValue (globalMixSmoothed.getTargetValue());
+    controlSamplesRemaining = 0;
+}
 
 bool DiceFXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
@@ -153,8 +204,9 @@ void DiceFXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     const float outputGainDb = *apvts.getRawParameterValue ("output_gain");
     const float globalMix = *apvts.getRawParameterValue ("mix");
 
-    buffer.applyGain (juce::Decibels::decibelsToGain (inputGainDb));
-    dryBuffer.makeCopyOf (buffer);
+    inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputGainDb));
+    outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputGainDb));
+    globalMixSmoothed.setTargetValue (globalMix);
 
     const bool distEnable = apvts.getRawParameterValue ("dist_enable")->load() > 0.5f;
     const bool delayEnable = apvts.getRawParameterValue ("delay_enable")->load() > 0.5f;
@@ -195,44 +247,64 @@ void DiceFXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     lfo.setRateValue (lfoRateValue);
     lfo.setTempo (bpm);
 
-    const float lfoValue = lfo.getNextValue (numSamples) * lfoDepth;
-
     if (delaySync)
         delayTimeMs = LFO::tempoDivisionToMs (LFO::getDivisionIndexFromValue (delayTimeMs, kMinDelayMs, kMaxDelayMs), bpm);
 
-    switch (lfoDest)
+    for (int offset = 0; offset < numSamples;)
     {
-        case 1: distDrive = applyLfoToRange (distDrive, 0.0f, 1.0f, lfoValue); break;
-        case 2: delayTimeMs = applyLfoToRange (delayTimeMs, kMinDelayMs, kMaxDelayMs, lfoValue); break;
-        case 3: delayFeedback = applyLfoToRange (delayFeedback, 0.0f, 0.95f, lfoValue); break;
-        case 4: revSize = applyLfoToRange (revSize, 0.0f, 1.0f, lfoValue); break;
-        case 5: revMix = applyLfoToRange (revMix, 0.0f, 1.0f, lfoValue); break;
-        case 6: modDepth = applyLfoToRange (modDepth, 0.0f, 1.0f, lfoValue); break;
-        default: break;
+        if (controlSamplesRemaining == 0)
+        {
+            // A fixed sample-clock cadence, independent of host block boundaries.
+            const float lfoValue = lfo.getNextValue() * lfoDepth;
+            lfo.skip (controlInterval - 1);
+            float drive = distDrive, time = delayTimeMs, feedback = delayFeedback;
+            float size = revSize, reverbMix = revMix, depth = modDepth;
+            switch (lfoDest)
+            {
+                case 1: drive = applyLfoToRange (drive, 0.0f, 1.0f, lfoValue); break;
+                case 2:
+                    time = juce::jlimit (kMinDelayMs,
+                                        delaySync ? static_cast<float> (Delay::maximumDelaySeconds * 1000.0) : kMaxDelayMs,
+                                        time + lfoValue * (kMaxDelayMs - kMinDelayMs));
+                    break;
+                case 3: feedback = applyLfoToRange (feedback, 0.0f, 0.95f, lfoValue); break;
+                case 4: size = applyLfoToRange (size, 0.0f, 1.0f, lfoValue); break;
+                case 5: reverbMix = applyLfoToRange (reverbMix, 0.0f, 1.0f, lfoValue); break;
+                case 6: depth = applyLfoToRange (depth, 0.0f, 1.0f, lfoValue); break;
+                default: break;
+            }
+            distortion.setParameters (drive, distMix, distTone, distType, distEnable);
+            modulation.setParameters (modRate, depth, modMix, modFeedback, modType, modEnable);
+            delay.setParameters (time, feedback, delayMix, delayFilter, delayType, delayEnable);
+            reverb.setParameters (size, revDamp, reverbMix, revType, revEnable);
+            controlSamplesRemaining = controlInterval;
+        }
+
+        const int count = juce::jmin (controlSamplesRemaining, numSamples - offset, dryBuffer.getNumSamples());
+        float* channels[] { buffer.getWritePointer (0, offset), buffer.getWritePointer (1, offset) };
+        juce::AudioBuffer<float> slice (channels, 2, count); // Non-owning, stack-only view.
+        for (int i = 0; i < count; ++i)
+        {
+            const float gain = inputGainSmoothed.getNextValue();
+            for (auto* channel : channels)
+                channel[i] *= gain;
+        }
+        for (int channel = 0; channel < 2; ++channel)
+            dryBuffer.copyFrom (channel, 0, slice, channel, 0, count);
+        distortion.process (slice);
+        modulation.process (slice);
+        delay.process (slice);
+        reverb.process (slice);
+        for (int i = 0; i < count; ++i)
+        {
+            const float mix = globalMixSmoothed.getNextValue();
+            const float gain = outputGainSmoothed.getNextValue();
+            for (int channel = 0; channel < 2; ++channel)
+                channels[channel][i] = (channels[channel][i] * mix + dryBuffer.getSample (channel, i) * (1.0f - mix)) * gain;
+        }
+        offset += count;
+        controlSamplesRemaining -= count;
     }
-
-    distortion.setParameters (distDrive, distMix, distTone, distType, distEnable);
-    distortion.process (buffer);
-
-    modulation.setParameters (modRate, modDepth, modMix, modFeedback, modType, modEnable);
-    modulation.process (buffer);
-
-    delay.setParameters (delayTimeMs, delayFeedback, delayMix, delayFilter, delayType, delayEnable);
-    delay.process (buffer);
-
-    reverb.setParameters (revSize, revDamp, revMix, revType, revEnable);
-    reverb.process (buffer);
-
-    const float dryGain = 1.0f - globalMix;
-    for (int channel = 0; channel < totalNumOutputChannels; ++channel)
-    {
-        auto* wet = buffer.getWritePointer (channel);
-        const auto* dry = dryBuffer.getReadPointer (channel);
-        for (int i = 0; i < numSamples; ++i)
-            wet[i] = wet[i] * globalMix + dry[i] * dryGain;
-    }
-
-    buffer.applyGain (juce::Decibels::decibelsToGain (outputGainDb));
 }
 
 bool DiceFXAudioProcessor::hasEditor() const { return true; }

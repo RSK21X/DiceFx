@@ -12,7 +12,13 @@ DiceFX is a stereo multi-effects VST3 plug-in for sound experiments. Combine dis
 
 A smaller, cleaner interface: flat black-and-yellow styling, scalable SVG icons and a tidy 2×2 effects panel. The default window is **800 × 500**, resizable from **720 × 450** to **1120 × 700**. Knobs stay round and controls retain their spacing when resized.
 
-This update changes the interface and documentation, **not the audio-processing code**.
+Release 1.1.0 changed the interface and documentation, **not the audio-processing code**. The current-source DSP fixes are described below.
+
+### Current source: DSP fixes (not yet in release downloads)
+
+The main branch additionally fixes unstable tone filters at low sample rates, filter history loss, mismatched stereo control ramps, reverb timing, block-size-dependent modulation, resets, and abrupt master/delay-time changes. Processing reuses prepared memory, including irregular or oversized host blocks. The interface and parameter IDs are unchanged.
+
+Tempo synchronization supports 10–1000 BPM, with up to 24 seconds of delay prepared at every sample rate. Out-of-range positive tempos are limited to that range; missing or invalid tempos fall back to 120 BPM. Tail lengths are conservative: synchronized delays allow for the slowest supported tempo, and regenerative Tape feedback reports an infinite tail rather than allowing hosts to cut it off. **The existing 1.1.0 downloads do not contain these source fixes.**
 
 ## Download and install
 
@@ -75,7 +81,7 @@ Use **Save** to keep a user preset. The **…** menu includes save, import and e
 ~/Library/DiceFX/Presets/
 ```
 
-Existing parameter IDs and the audio-processing implementation are retained in this UI update.
+Release 1.1.0 retained the existing parameter IDs and audio-processing implementation. The current-source DSP fixes also keep the parameter IDs unchanged.
 
 ## Build from source
 
@@ -120,6 +126,17 @@ cmake --build build --config Release --target DiceFXUIChecks -j 4
 
 The checks render the real editor at four sizes and test SVG rendering, circular knobs, non-overlapping controls, parameter bindings, factory presets, locks, randomization, undo/redo, A/B and sync displays. They also check for finite audio output across all factory presets at 44.1/48/96 kHz and 64/512-sample blocks.
 
+### Offline DSP regression checks
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DDICEFX_BUILD_DSP_CHECKS=ON -DDICEFX_COPY_PLUGIN_AFTER_BUILD=OFF
+cmake --build build --config Release --target DiceFXDSPChecks -j 4
+ctest --test-dir build -C Release --output-on-failure
+```
+
+These checks cover 22.05–192 kHz stability, filter continuity, stereo ramps, reverb and synced-delay timing, all six LFO destinations across different block sizes, control smoothing, resets, and tail declarations. On macOS, an allocation audit checks `malloc`, `calloc`, `realloc` and C++ allocation during processing. Other platforms check C++ allocation only.
+
 ## Project map
 
 - `Source/UI/` — theme, controls, layout and randomization history.
@@ -127,6 +144,7 @@ The checks render the real editor at four sizes and test SVG rendering, circular
 - `Source/Presets/` and `Resources/Presets.json` — preset handling and factory presets.
 - `Resources/Icons/` — embedded SVG icons.
 - `Tests/UIChecks.cpp` — editor checks and screenshots.
+- `Tests/DSPChecks.cpp` — offline audio regression checks.
 - `external/JUCE/` — pinned framework submodule.
 
 ## License

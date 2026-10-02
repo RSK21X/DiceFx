@@ -17,6 +17,7 @@ public:
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
+    void reset() override;
 
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
 
@@ -79,6 +80,11 @@ private:
     DiceReverb reverb;
 
     juce::AudioBuffer<float> dryBuffer;
+    juce::SmoothedValue<float> inputGainSmoothed { 1.0f };
+    juce::SmoothedValue<float> outputGainSmoothed { 1.0f };
+    juce::SmoothedValue<float> globalMixSmoothed { 0.5f };
+    static constexpr int controlInterval = 16;
+    int controlSamplesRemaining = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DiceFXAudioProcessor)
 };

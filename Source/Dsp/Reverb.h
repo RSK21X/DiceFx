@@ -14,13 +14,18 @@ public:
 
     void prepare (const juce::dsp::ProcessSpec& spec)
     {
+        reverb.prepare (spec);
         reverb.reset();
         sampleRate = spec.sampleRate;
         mixSmoothed.reset (sampleRate, 0.05);
-        wetBuffer.setSize (static_cast<int> (spec.numChannels), static_cast<int> (spec.maximumBlockSize));
+        wetBuffer.setSize (static_cast<int> (spec.numChannels), juce::jmax (1, static_cast<int> (spec.maximumBlockSize)));
     }
 
-    void reset() { reverb.reset(); }
+    void reset()
+    {
+        reverb.reset();
+        mixSmoothed.setCurrentAndTargetValue (mixSmoothed.getTargetValue());
+    }
 
     void setParameters (float newSize, float newDamp, float newMix, int newType, bool shouldEnable)
     {
@@ -59,29 +64,29 @@ public:
         if (! enabled)
             return;
 
-        if (wetBuffer.getNumChannels() != buffer.getNumChannels()
-            || wetBuffer.getNumSamples() != buffer.getNumSamples())
-            wetBuffer.setSize (buffer.getNumChannels(), buffer.getNumSamples(), false, false, true);
-
-        wetBuffer.makeCopyOf (buffer, true);
-
-        juce::dsp::AudioBlock<float> block (wetBuffer);
-        juce::dsp::ProcessContextReplacing<float> context (block);
-        reverb.process (context);
-
         const int numChannels = buffer.getNumChannels();
         const int numSamples = buffer.getNumSamples();
-
-        for (int channel = 0; channel < numChannels; ++channel)
+        // Hosts may send smaller, irregular, or oversized buffers. Slice into the
+        // storage allocated in prepare(), rather than resizing on the audio thread.
+        for (int offset = 0; offset < numSamples;)
         {
-            auto* dry = buffer.getWritePointer (channel);
-            const auto* wet = wetBuffer.getReadPointer (channel);
-
-            for (int i = 0; i < numSamples; ++i)
+            const int count = juce::jmin (wetBuffer.getNumSamples(), numSamples - offset);
+            for (int channel = 0; channel < numChannels; ++channel)
+                wetBuffer.copyFrom (channel, 0, buffer, channel, offset, count);
+            auto block = juce::dsp::AudioBlock<float> (wetBuffer).getSubBlock (0, static_cast<size_t> (count));
+            juce::dsp::ProcessContextReplacing<float> context (block);
+            reverb.process (context);
+            for (int i = 0; i < count; ++i)
             {
                 const float mixValue = mixSmoothed.getNextValue();
-                dry[i] = dry[i] * (1.0f - mixValue) + wet[i] * mixValue;
+                for (int channel = 0; channel < numChannels; ++channel)
+                {
+                    auto* dry = buffer.getWritePointer (channel, offset);
+                    const auto* wet = wetBuffer.getReadPointer (channel);
+                    dry[i] = dry[i] * (1.0f - mixValue) + wet[i] * mixValue;
+                }
             }
+            offset += count;
         }
     }
 
