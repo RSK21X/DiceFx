@@ -6,7 +6,9 @@
 
 A compact stereo multi-effects plug-in: distortion, modulation, delay and reverb, with one-click randomization.
 
-![DiceFX — compact black-and-yellow interface](docs/images/dicefx-main.png)
+https://github.com/user-attachments/assets/d30079da-32c5-4a76-9c59-fde0a0ef6355
+
+
 
 ## Features
 
