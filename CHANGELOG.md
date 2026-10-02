@@ -1,6 +1,6 @@
 # Changelog / 更新记录
 
-## Unreleased / 尚未发布
+## 1.1.1 — 2026-10-02
 
 ### English
 
